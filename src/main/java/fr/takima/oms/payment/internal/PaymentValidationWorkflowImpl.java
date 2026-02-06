@@ -2,14 +2,15 @@ package fr.takima.oms.payment.internal;
 
 import fr.takima.oms.payment.internal.PaymentActivities.PaymentDetails;
 import fr.takima.oms.payment.internal.PaymentActivities.PaymentDetailsRequest;
+import fr.takima.oms.temporal.TaskQueues;
 
-import static io.temporal.workflow.Workflow.newActivityStub;
+import static fr.takima.oms.temporal.TemporalHelpers.simpleActivityStub;
 
 public class PaymentValidationWorkflowImpl implements PaymentValidationWorkflow {
 
     private boolean needsSync = true;
     private boolean orderNotified = false;
-    private final PaymentActivities paymentActivities = newActivityStub(PaymentActivities.class);
+    private final PaymentActivities paymentActivities = simpleActivityStub(PaymentActivities.class, TaskQueues.PAYMENT);
 
     @Override
     public void validatePayment(Input input) {

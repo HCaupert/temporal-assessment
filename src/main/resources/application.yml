@@ -1,3 +1,7 @@
 spring:
   application:
     name: OMS
+
+storefront:
+  instance-deployed: 1
+  store-front-rate-limit-per-sec: 150

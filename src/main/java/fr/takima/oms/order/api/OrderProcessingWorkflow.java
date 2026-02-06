@@ -21,7 +21,7 @@ public interface OrderProcessingWorkflow {
     void triggerOrderProcessing();
 
     @SignalMethod
-    void cancelOrder();
+    void requestOrderCancellation();
 
 
     record Order() {

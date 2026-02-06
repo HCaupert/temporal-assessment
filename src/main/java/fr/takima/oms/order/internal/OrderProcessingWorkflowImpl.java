@@ -10,6 +10,7 @@ import fr.takima.oms.payment.api.PublicPaymentActivities;
 import fr.takima.oms.payment.api.PublicPaymentActivities.CancelPaymentRequest;
 import fr.takima.oms.pishofy.api.StoreFrontActivities;
 import fr.takima.oms.pishofy.internal.StoreFrontOrder;
+import fr.takima.oms.temporal.TaskQueues;
 import io.temporal.workflow.Promise;
 import io.temporal.workflow.Workflow;
 
@@ -17,13 +18,14 @@ import javax.annotation.Nullable;
 import java.time.Duration;
 import java.util.Objects;
 
-import static io.temporal.workflow.Workflow.newActivityStub;
+import static fr.takima.oms.temporal.TemporalHelpers.simpleActivityStub;
 
 public class OrderProcessingWorkflowImpl implements OrderProcessingWorkflow {
 
-    private final Promise<Void> paymentExpirationTimer = Workflow.newTimer(Duration.ofMinutes(30));
-    private final PublicPaymentActivities paymentActivities = newActivityStub(PublicPaymentActivities.class);
-
+    private final Promise<Void> paymentExpirationTimer = Workflow.newTimer(Duration.ofDays(30));
+    private final PublicPaymentActivities paymentActivities = simpleActivityStub(PublicPaymentActivities.class, TaskQueues.PAYMENT);
+    private final StoreFrontActivities storeFrontActivities = simpleActivityStub(StoreFrontActivities.class, TaskQueues.STORE_FRONT);
+    private final OrderActivities orderActivities = simpleActivityStub(OrderActivities.class, TaskQueues.ORDER);
 
     @Nullable
     private PaymentSignal.Status paymentStatus = null;
@@ -32,22 +34,20 @@ public class OrderProcessingWorkflowImpl implements OrderProcessingWorkflow {
     private boolean orderChanged = false;
     private boolean orderCancelled = false;
 
-    private final StoreFrontActivities storeFrontActivities = newActivityStub(StoreFrontActivities.class);
-    private final OrderActivities orderActivities = newActivityStub(OrderActivities.class);
-
     public void processOrder(Input input) {
 
-        while (!orderValid() || orderCancelled) {
-            Workflow.await(() -> orderChanged || orderCancelled);
-            if (orderCancelled) continue;
+        while (!orderValid() || !orderCancelled || !paymentExpired()) {
+            Workflow.await(() -> orderChanged || orderCancelled || paymentExpired());
+            if (orderCancelled || paymentExpired()) continue;
             orderChanged = false;
 
             order = storeFrontActivities.getOrder(input.orderId());
-            // Give visibility to customer & support team
+            // Give visibility to customers & support team
             orderActivities.upsertOrder(order);
+            // Might as well notify the support team here
         }
 
-        if (paymentExpirationTimer.isCompleted() || orderCancelled || paymentFailed()) {
+        if (paymentExpired() || orderCancelled || paymentFailed()) {
             cancelOrder(input);
             return;
         }
@@ -58,6 +58,11 @@ public class OrderProcessingWorkflowImpl implements OrderProcessingWorkflow {
         }
 
         orderActivities.allocateOrder(new OrderAllocateRequest(input.orderId()));
+    }
+
+    public void requestOrderCancellation() {
+        if (paymentCompleted()) return; // Too late!
+        orderCancelled = true;
     }
 
     private void cancelOrder(Input input) {
@@ -93,8 +98,7 @@ public class OrderProcessingWorkflowImpl implements OrderProcessingWorkflow {
         return Objects.nonNull(order) && order.order().valid();
     }
 
-    public void cancelOrder() {
-        if (paymentCompleted()) return; // Too late!
-        orderCancelled = true;
+    private boolean paymentExpired() {
+        return Objects.isNull(paymentStatus) && paymentExpirationTimer.isCompleted();
     }
 }

@@ -17,7 +17,8 @@ public class PaymentTemporalConfiguration {
 
     @PostConstruct
     void initWorker() {
-        var worker = workerFactory.newWorker(TaskQueues.ORDER);
+        var worker = workerFactory.newWorker(TaskQueues.PAYMENT);
+        worker.registerWorkflowImplementationTypes(PaymentValidationWorkflowImpl.class);
         worker.registerActivitiesImplementations(paymentActivities, publicPaymentActivities);
     }
 }
